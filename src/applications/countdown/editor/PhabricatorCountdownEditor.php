@@ -147,12 +147,10 @@ final class PhabricatorCountdownEditor
 
   public function getMailTagsMap() {
     return array(
-      PhabricatorCountdownTransaction::MAILTAG_TITLE =>
-        pht('Someone changes the countdown title.'),
-      PhabricatorCountdownTransaction::MAILTAG_DESCRIPTION =>
-        pht('Someone changes the countdown description.'),
-      PhabricatorCountdownTransaction::MAILTAG_EPOCH =>
-        pht('Someone changes the countdown end date.'),
+      PhabricatorCountdownTransaction::MAILTAG_DETAILS =>
+        pht('Someone changes the countdown details.'),
+      PhabricatorCountdownTransaction::MAILTAG_COMMENT =>
+        pht('Someone comments on a countdown.'),
       PhabricatorCountdownTransaction::MAILTAG_OTHER =>
         pht('Other countdown activity not listed above occurs.'),
     );
@@ -160,7 +158,7 @@ final class PhabricatorCountdownEditor
 
   protected function buildMailTemplate(PhabricatorLiskDAO $object) {
     $monogram = $object->getMonogram();
-    $name = $object->getName();
+    $name = $object->getTitle();
 
     return id(new PhabricatorMetaMTAMail())
       ->setSubject("{$monogram}: {$name}")
@@ -172,6 +170,13 @@ final class PhabricatorCountdownEditor
     array $xactions) {
 
     $body = parent::buildMailBody($object, $xactions);
+    $description = $object->getDescription();
+
+    if (strlen($description)) {
+      $body->addTextSection(
+        pht('COUNTDOWN DESCRIPTION'),
+        $object->getDescription());
+    }
 
     $body->addLinkSection(
       pht('COUNTDOWN DETAIL'),
@@ -181,11 +186,13 @@ final class PhabricatorCountdownEditor
   }
 
   protected function getMailTo(PhabricatorLiskDAO $object) {
-    return array($object->getAuthorPHID());
+    return array(
+      $object->getAuthorPHID(),
+      $this->requireActor()->getPHID(),
+    );
   }
-
   protected function getMailSubjectPrefix() {
-    return 'Countdown';
+    return '[Countdown]';
   }
 
   protected function buildReplyHandler(PhabricatorLiskDAO $object) {
