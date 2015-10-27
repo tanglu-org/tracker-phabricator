@@ -42,14 +42,6 @@ final class PhabricatorPasteViewController extends PhabricatorPasteController {
       return new Aphront404Response();
     }
 
-    $file = id(new PhabricatorFileQuery())
-      ->setViewer($viewer)
-      ->withPHIDs(array($paste->getFilePHID()))
-      ->executeOne();
-    if (!$file) {
-      return new Aphront400Response();
-    }
-
     $forks = id(new PhabricatorPasteQuery())
       ->setViewer($viewer)
       ->withParentPHIDs(array($paste->getPHID()))
@@ -57,23 +49,22 @@ final class PhabricatorPasteViewController extends PhabricatorPasteController {
     $fork_phids = mpull($forks, 'getPHID');
 
     $header = $this->buildHeaderView($paste);
-    $actions = $this->buildActionView($viewer, $paste, $file);
+    $actions = $this->buildActionView($viewer, $paste);
     $properties = $this->buildPropertyView($paste, $fork_phids, $actions);
 
     $object_box = id(new PHUIObjectBoxView())
       ->setHeader($header)
       ->addPropertyList($properties);
 
-    $source_code = $this->buildSourceCodeView(
-      $paste,
-      null,
-      $this->highlightMap);
+    $source_code = $this->buildSourceCodeView($paste, $this->highlightMap);
 
-    $source_code = id(new PHUIBoxView())
-      ->appendChild($source_code)
-      ->addMargin(PHUI::MARGIN_LARGE_LEFT)
-      ->addMargin(PHUI::MARGIN_LARGE_RIGHT)
-      ->addMargin(PHUI::MARGIN_LARGE_TOP);
+    require_celerity_resource('paste-css');
+    $source_code = phutil_tag(
+      'div',
+      array(
+        'class' => 'container-of-paste',
+      ),
+      $source_code);
 
     $crumbs = $this->buildApplicationCrumbs($this->buildSideNavView())
       ->addTextCrumb('P'.$paste->getID(), '/P'.$paste->getID());
@@ -137,8 +128,7 @@ final class PhabricatorPasteViewController extends PhabricatorPasteController {
 
   private function buildActionView(
     PhabricatorUser $viewer,
-    PhabricatorPaste $paste,
-    PhabricatorFile $file) {
+    PhabricatorPaste $paste) {
 
     $can_edit = PhabricatorPolicyFilter::hasCapability(
       $viewer,
@@ -146,7 +136,8 @@ final class PhabricatorPasteViewController extends PhabricatorPasteController {
       PhabricatorPolicyCapability::CAN_EDIT);
 
     $can_fork = $viewer->isLoggedIn();
-    $fork_uri = $this->getApplicationURI('/create/?parent='.$paste->getID());
+    $id = $paste->getID();
+    $fork_uri = $this->getApplicationURI('/create/?parent='.$id);
 
     return id(new PhabricatorActionListView())
       ->setUser($viewer)
@@ -158,7 +149,7 @@ final class PhabricatorPasteViewController extends PhabricatorPasteController {
           ->setIcon('fa-pencil')
           ->setDisabled(!$can_edit)
           ->setWorkflow(!$can_edit)
-          ->setHref($this->getApplicationURI('/edit/'.$paste->getID().'/')))
+          ->setHref($this->getApplicationURI("edit/{$id}/")))
       ->addAction(
         id(new PhabricatorActionView())
           ->setName(pht('Fork This Paste'))
@@ -170,7 +161,7 @@ final class PhabricatorPasteViewController extends PhabricatorPasteController {
         id(new PhabricatorActionView())
           ->setName(pht('View Raw File'))
           ->setIcon('fa-file-text-o')
-          ->setHref($file->getBestURI()));
+          ->setHref($this->getApplicationURI("raw/{$id}/")));
   }
 
   private function buildPropertyView(

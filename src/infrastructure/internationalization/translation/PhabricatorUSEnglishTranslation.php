@@ -386,10 +386,24 @@ final class PhabricatorUSEnglishTranslation
         ),
       ),
 
+      '%s added %s reviewer(s) for %s: %s.' => array(
+        array(
+          '%s added a reviewer for %3$s: %4$s.',
+          '%s added reviewers for %3$s: %4$s.',
+        ),
+      ),
+
       '%s removed %s reviewer(s): %s.' => array(
         array(
           '%s removed a reviewer: %3$s.',
           '%s removed reviewers: %3$s.',
+        ),
+      ),
+
+      '%s removed %s reviewer(s) for %s: %s.' => array(
+        array(
+          '%s removed a reviewer for %3$s: %4$s.',
+          '%s removed reviewers for %3$s: %4$s.',
         ),
       ),
 
@@ -1367,6 +1381,43 @@ final class PhabricatorUSEnglishTranslation
       'This action has no effect on %s target(s): %s.' => array(
         'This action has no effect on a target: %2$s.',
         'This action has no effect on targets: %2$s.',
+      ),
+
+      'Mail sent in the last %s day(s).' => array(
+        'Mail sent in the last day.',
+        'Mail sent in the last %s days.',
+      ),
+
+      '%s Day(s)' => array(
+        '%s Day',
+        '%s Days',
+      ),
+
+      'Setting retention policy for "%s" to %s day(s).' => array(
+        'Setting retention policy for "%s" to one day.',
+        'Setting retention policy for "%s" to %s days.',
+      ),
+
+      'Waiting %s second(s) for lease to activate.' => array(
+        'Waiting a second for lease to activate.',
+        'Waiting %s seconds for lease to activate.',
+      ),
+
+      '%s changed %s automation blueprint(s), added %s: %s; removed %s: %s.' =>
+        '%s changed automation blueprints, added: %4$s; removed: %6$s.',
+
+      '%s added %s automation blueprint(s): %s.' => array(
+        array(
+          '%s added an automation blueprint: %3$s.',
+          '%s added automation blueprints: %3$s.',
+        ),
+      ),
+
+      '%s removed %s automation blueprint(s): %s.' => array(
+        array(
+          '%s removed an automation blueprint: %3$s.',
+          '%s removed automation blueprints: %3$s.',
+        ),
       ),
 
     );
