@@ -9,6 +9,7 @@ final class PhamePostTransaction
   const TYPE_VISIBILITY       = 'phame.post.visibility';
 
   const MAILTAG_CONTENT       = 'phame-post-content';
+  const MAILTAG_SUBSCRIBERS   = 'phame-post-subscribers';
   const MAILTAG_COMMENT       = 'phame-post-comment';
   const MAILTAG_OTHER         = 'phame-post-other';
 
@@ -71,6 +72,9 @@ final class PhamePostTransaction
     switch ($this->getTransactionType()) {
       case PhabricatorTransactions::TYPE_COMMENT:
         $tags[] = self::MAILTAG_COMMENT;
+        break;
+      case PhabricatorTransactions::TYPE_SUBSCRIBERS:
+        $tags[] = self::MAILTAG_SUBSCRIBERS;
         break;
       case self::TYPE_TITLE:
       case self::TYPE_PHAME_TITLE:
@@ -185,34 +189,13 @@ final class PhamePostTransaction
     return parent::getTitleForFeed();
   }
 
-  public function getBodyForFeed(PhabricatorFeedStory $story) {
-    $text = null;
+  public function getRemarkupBodyForFeed(PhabricatorFeedStory $story) {
     switch ($this->getTransactionType()) {
-      case self::TYPE_TITLE:
-        if ($this->getOldValue() === null) {
-          $post = $story->getPrimaryObject();
-          $text = $post->getBody();
-        }
-        break;
-      case self::TYPE_VISIBILITY:
-        if ($this->getNewValue() == PhameConstants::VISIBILITY_PUBLISHED) {
-          $post = $story->getPrimaryObject();
-          $text = $post->getBody();
-        }
-        break;
       case self::TYPE_BODY:
-        $text = $this->getNewValue();
-        break;
+        return $this->getNewValue();
     }
 
-    if (strlen($text)) {
-      return phutil_escape_html_newlines(
-        id(new PhutilUTF8StringTruncator())
-        ->setMaximumGlyphs(128)
-        ->truncateString($text));
-    }
-
-    return parent::getBodyForFeed($story);
+    return null;
   }
 
   public function getColor() {

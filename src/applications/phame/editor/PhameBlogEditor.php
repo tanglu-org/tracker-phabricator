@@ -17,7 +17,7 @@ final class PhameBlogEditor
     $types[] = PhameBlogTransaction::TYPE_NAME;
     $types[] = PhameBlogTransaction::TYPE_DESCRIPTION;
     $types[] = PhameBlogTransaction::TYPE_DOMAIN;
-    $types[] = PhameBlogTransaction::TYPE_SKIN;
+    $types[] = PhameBlogTransaction::TYPE_STATUS;
     $types[] = PhabricatorTransactions::TYPE_VIEW_POLICY;
     $types[] = PhabricatorTransactions::TYPE_EDIT_POLICY;
 
@@ -35,8 +35,8 @@ final class PhameBlogEditor
         return $object->getDescription();
       case PhameBlogTransaction::TYPE_DOMAIN:
         return $object->getDomain();
-      case PhameBlogTransaction::TYPE_SKIN:
-        return $object->getSkin();
+      case PhameBlogTransaction::TYPE_STATUS:
+        return $object->getStatus();
     }
   }
 
@@ -48,7 +48,7 @@ final class PhameBlogEditor
       case PhameBlogTransaction::TYPE_NAME:
       case PhameBlogTransaction::TYPE_DESCRIPTION:
       case PhameBlogTransaction::TYPE_DOMAIN:
-      case PhameBlogTransaction::TYPE_SKIN:
+      case PhameBlogTransaction::TYPE_STATUS:
         return $xaction->getNewValue();
     }
   }
@@ -64,8 +64,8 @@ final class PhameBlogEditor
         return $object->setDescription($xaction->getNewValue());
       case PhameBlogTransaction::TYPE_DOMAIN:
         return $object->setDomain($xaction->getNewValue());
-      case PhameBlogTransaction::TYPE_SKIN:
-        return $object->setSkin($xaction->getNewValue());
+      case PhameBlogTransaction::TYPE_STATUS:
+        return $object->setStatus($xaction->getNewValue());
     }
 
     return parent::applyCustomInternalTransaction($object, $xaction);
@@ -79,7 +79,7 @@ final class PhameBlogEditor
       case PhameBlogTransaction::TYPE_NAME:
       case PhameBlogTransaction::TYPE_DESCRIPTION:
       case PhameBlogTransaction::TYPE_DOMAIN:
-      case PhameBlogTransaction::TYPE_SKIN:
+      case PhameBlogTransaction::TYPE_STATUS:
         return;
     }
 
