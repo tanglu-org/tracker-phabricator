@@ -12,8 +12,7 @@ final class PhabricatorOwnersPathsController
       ->requireCapabilities(
         array(
           PhabricatorPolicyCapability::CAN_VIEW,
-          // TODO: Support this capability.
-          // PhabricatorPolicyCapability::CAN_EDIT,
+          PhabricatorPolicyCapability::CAN_EDIT,
         ))
       ->needPaths(true)
       ->executeOne();
@@ -83,7 +82,7 @@ final class PhabricatorOwnersPathsController
       }
     }
 
-    $repos = mpull($repos, 'getCallsign', 'getPHID');
+    $repos = mpull($repos, 'getMonogram', 'getPHID');
     asort($repos);
 
     $template = new AphrontTypeaheadTemplateView();

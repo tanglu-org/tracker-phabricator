@@ -111,6 +111,10 @@ final class PhabricatorBadgesBadge extends PhabricatorBadgesDAO
     return $this->assertAttached($this->recipientPHIDs);
   }
 
+  public function getViewURI() {
+    return '/badges/view/'.$this->getID().'/';
+  }
+
   public function save() {
     if (!$this->getMailKey()) {
       $this->setMailKey(Filesystem::readRandomCharacters(20));
@@ -175,14 +179,6 @@ final class PhabricatorBadgesBadge extends PhabricatorBadgesDAO
 
   public function isAutomaticallySubscribed($phid) {
     return ($this->creatorPHID == $phid);
-  }
-
-  public function shouldShowSubscribersProperty() {
-    return true;
-  }
-
-  public function shouldAllowSubscription($phid) {
-    return true;
   }
 
 
