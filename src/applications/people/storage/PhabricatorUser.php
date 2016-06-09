@@ -5,6 +5,8 @@
  * @task image-cache Profile Image Cache
  * @task factors Multi-Factor Authentication
  * @task handles Managing Handles
+ * @task settings Settings
+ * @task cache User Cache
  */
 final class PhabricatorUser
   extends PhabricatorUserDAO
@@ -16,7 +18,8 @@ final class PhabricatorUser
     PhabricatorSSHPublicKeyInterface,
     PhabricatorFlaggableInterface,
     PhabricatorApplicationTransactionInterface,
-    PhabricatorFulltextInterface {
+    PhabricatorFulltextInterface,
+    PhabricatorConduitResultInterface {
 
   const SESSION_TABLE = 'phabricator_session';
   const NAMETOKEN_TABLE = 'user_nametoken';
@@ -24,15 +27,12 @@ final class PhabricatorUser
 
   protected $userName;
   protected $realName;
-  protected $sex;
-  protected $translation;
   protected $passwordSalt;
   protected $passwordHash;
   protected $profileImagePHID;
   protected $profileImageCache;
   protected $availabilityCache;
   protected $availabilityCacheTTL;
-  protected $timezoneIdentifier = '';
 
   protected $consoleEnabled = 0;
   protected $consoleVisible = 0;
@@ -60,18 +60,16 @@ final class PhabricatorUser
 
   private $alternateCSRFString = self::ATTACHABLE;
   private $session = self::ATTACHABLE;
+  private $rawCacheData = array();
+  private $usableCacheData = array();
 
   private $authorities = array();
   private $handlePool;
   private $csrfSalt;
+  private $timezoneOverride;
 
   protected function readField($field) {
     switch ($field) {
-      case 'timezoneIdentifier':
-        // If the user hasn't set one, guess the server's time.
-        return nonempty(
-          $this->timezoneIdentifier,
-          date_default_timezone_get());
       // Make sure these return booleans.
       case 'isAdmin':
         return (bool)$this->isAdmin;
@@ -133,6 +131,19 @@ final class PhabricatorUser
   }
 
   public function canEstablishAPISessions() {
+    if ($this->getIsDisabled()) {
+      return false;
+    }
+
+    // Intracluster requests are permitted even if the user is logged out:
+    // in particular, public users are allowed to issue intracluster requests
+    // when browsing Diffusion.
+    if (PhabricatorEnv::isClusterRemoteAddress()) {
+      if (!$this->isLoggedIn()) {
+        return true;
+      }
+    }
+
     if (!$this->isUserActivated()) {
       return false;
     }
@@ -174,8 +185,6 @@ final class PhabricatorUser
       self::CONFIG_COLUMN_SCHEMA => array(
         'userName' => 'sort64',
         'realName' => 'text128',
-        'sex' => 'text4?',
-        'translation' => 'text64?',
         'passwordSalt' => 'text32?',
         'passwordHash' => 'text128?',
         'profileImagePHID' => 'phid?',
@@ -187,7 +196,6 @@ final class PhabricatorUser
         'isMailingList' => 'bool',
         'isDisabled' => 'bool',
         'isAdmin' => 'bool',
-        'timezoneIdentifier' => 'text255',
         'isEmailVerified' => 'uint32',
         'isApproved' => 'uint32',
         'accountSecret' => 'bytes64',
@@ -242,11 +250,6 @@ final class PhabricatorUser
       $this->setPasswordHash($hash->openEnvelope());
     }
     return $this;
-  }
-
-  // To satisfy PhutilPerson.
-  public function getSex() {
-    return $this->sex;
   }
 
   public function getMonogram() {
@@ -473,6 +476,71 @@ final class PhabricatorUser
       '(isPrimary = 1)');
   }
 
+
+/* -(  Settings  )----------------------------------------------------------- */
+
+
+  public function getUserSetting($key) {
+    $settings_key = PhabricatorUserPreferencesCacheType::KEY_PREFERENCES;
+    $settings = $this->requireCacheData($settings_key);
+
+    if (array_key_exists($key, $settings)) {
+      return $settings[$key];
+    }
+
+    $defaults = PhabricatorSetting::getAllEnabledSettings($this);
+    if (isset($defaults[$key])) {
+      return $defaults[$key]->getSettingDefaultValue();
+    }
+
+    return null;
+  }
+
+
+  /**
+   * Test if a given setting is set to a particular value.
+   *
+   * @param const Setting key.
+   * @param wild Value to compare.
+   * @return bool True if the setting has the specified value.
+   * @task settings
+   */
+  public function compareUserSetting($key, $value) {
+    $actual = $this->getUserSetting($key);
+    return ($actual == $value);
+  }
+
+  public function getTranslation() {
+    return $this->getUserSetting(PhabricatorTranslationSetting::SETTINGKEY);
+  }
+
+  public function getTimezoneIdentifier() {
+    if ($this->timezoneOverride) {
+      return $this->timezoneOverride;
+    }
+
+    return $this->getUserSetting(PhabricatorTimezoneSetting::SETTINGKEY);
+  }
+
+
+  /**
+   * Override the user's timezone identifier.
+   *
+   * This is primarily useful for unit tests.
+   *
+   * @param string New timezone identifier.
+   * @return this
+   * @task settings
+   */
+  public function overrideTimezoneIdentifier($identifier) {
+    $this->timezoneOverride = $identifier;
+    return $this;
+  }
+
+  public function getSex() {
+    return $this->getUserSetting(PhabricatorPronounSetting::SETTINGKEY);
+  }
+
   public function loadPreferences() {
     if ($this->preferences) {
       return $this->preferences;
@@ -480,14 +548,16 @@ final class PhabricatorUser
 
     $preferences = null;
     if ($this->getPHID()) {
-      $preferences = id(new PhabricatorUserPreferences())->loadOneWhere(
-        'userPHID = %s',
-        $this->getPHID());
+      $preferences = id(new PhabricatorUserPreferencesQuery())
+        ->setViewer($this)
+        ->withUsers(array($this))
+        ->executeOne();
     }
 
     if (!$preferences) {
       $preferences = new PhabricatorUserPreferences();
       $preferences->setUserPHID($this->getPHID());
+      $preferences->attachUser($this);
 
       $default_dict = array(
         PhabricatorUserPreferences::PREFERENCE_TITLES => 'glyph',
@@ -742,6 +812,17 @@ final class PhabricatorUser
     return new DateTimeZone($this->getTimezoneIdentifier());
   }
 
+  public function getTimeZoneOffset() {
+    $timezone = $this->getTimeZone();
+    $now = new DateTime('@'.PhabricatorTime::getNow());
+    $offset = $timezone->getOffset($now);
+
+    // Javascript offsets are in minutes and have the opposite sign.
+    $offset = -(int)($offset / 60);
+
+    return $offset;
+  }
+
   public function formatShortDateTime($when, $now = null) {
     if ($now === null) {
       $now = PhabricatorTime::getNow();
@@ -943,6 +1024,10 @@ final class PhabricatorUser
    * @task availability
    */
   public function writeAvailabilityCache(array $availability, $ttl) {
+    if (PhabricatorEnv::isReadOnly()) {
+      return $this;
+    }
+
     $unguarded = AphrontWriteGuard::beginScopedUnguardedWrites();
     queryfx(
       $this->establishConnection('w'),
@@ -1264,11 +1349,12 @@ final class PhabricatorUser
         $external->delete();
       }
 
-      $prefs = id(new PhabricatorUserPreferences())->loadAllWhere(
-        'userPHID = %s',
-        $this->getPHID());
+      $prefs = id(new PhabricatorUserPreferencesQuery())
+        ->setViewer($engine->getViewer())
+        ->withUsers(array($this))
+        ->execute();
       foreach ($prefs as $pref) {
-        $pref->delete();
+        $engine->destroyObject($pref);
       }
 
       $profiles = id(new PhabricatorUserProfile())->loadAllWhere(
@@ -1278,11 +1364,12 @@ final class PhabricatorUser
         $profile->delete();
       }
 
-      $keys = id(new PhabricatorAuthSSHKey())->loadAllWhere(
-        'objectPHID = %s',
-        $this->getPHID());
+      $keys = id(new PhabricatorAuthSSHKeyQuery())
+        ->setViewer($engine->getViewer())
+        ->withObjectPHIDs(array($this->getPHID()))
+        ->execute();
       foreach ($keys as $key) {
-        $key->delete();
+        $engine->destroyObject($key);
       }
 
       $emails = id(new PhabricatorUserEmail())->loadAllWhere(
@@ -1328,6 +1415,12 @@ final class PhabricatorUser
     return 'id_rsa_phabricator';
   }
 
+  public function getSSHKeyNotifyPHIDs() {
+    return array(
+      $this->getPHID(),
+    );
+  }
+
 
 /* -(  PhabricatorApplicationTransactionInterface  )------------------------- */
 
@@ -1356,6 +1449,134 @@ final class PhabricatorUser
 
   public function newFulltextEngine() {
     return new PhabricatorUserFulltextEngine();
+  }
+
+
+/* -(  PhabricatorConduitResultInterface  )---------------------------------- */
+
+
+  public function getFieldSpecificationsForConduit() {
+    return array(
+      id(new PhabricatorConduitSearchFieldSpecification())
+        ->setKey('username')
+        ->setType('string')
+        ->setDescription(pht("The user's username.")),
+      id(new PhabricatorConduitSearchFieldSpecification())
+        ->setKey('realName')
+        ->setType('string')
+        ->setDescription(pht("The user's real name.")),
+      id(new PhabricatorConduitSearchFieldSpecification())
+        ->setKey('roles')
+        ->setType('list<string>')
+        ->setDescription(pht('List of acccount roles.')),
+    );
+  }
+
+  public function getFieldValuesForConduit() {
+    $roles = array();
+
+    if ($this->getIsDisabled()) {
+      $roles[] = 'disabled';
+    }
+
+    if ($this->getIsSystemAgent()) {
+      $roles[] = 'bot';
+    }
+
+    if ($this->getIsMailingList()) {
+      $roles[] = 'list';
+    }
+
+    if ($this->getIsAdmin()) {
+      $roles[] = 'admin';
+    }
+
+    if ($this->getIsEmailVerified()) {
+      $roles[] = 'verified';
+    }
+
+    if ($this->getIsApproved()) {
+      $roles[] = 'approved';
+    }
+
+    if ($this->isUserActivated()) {
+      $roles[] = 'activated';
+    }
+
+    return array(
+      'username' => $this->getUsername(),
+      'realName' => $this->getRealName(),
+      'roles' => $roles,
+    );
+  }
+
+  public function getConduitSearchAttachments() {
+    return array();
+  }
+
+
+/* -(  User Cache  )--------------------------------------------------------- */
+
+
+  /**
+   * @task cache
+   */
+  public function attachRawCacheData(array $data) {
+    $this->rawCacheData = $data + $this->rawCacheData;
+    return $this;
+  }
+
+
+  /**
+   * @task cache
+   */
+  protected function requireCacheData($key) {
+    if (isset($this->usableCacheData[$key])) {
+      return $this->usableCacheData[$key];
+    }
+
+    $type = PhabricatorUserCacheType::requireCacheTypeForKey($key);
+
+    if (isset($this->rawCacheData[$key])) {
+      $raw_value = $this->rawCacheData[$key];
+
+      $usable_value = $type->getValueFromStorage($raw_value);
+      $this->usableCacheData[$key] = $usable_value;
+
+      return $usable_value;
+    }
+
+    $usable_value = $type->getDefaultValue();
+
+    $user_phid = $this->getPHID();
+    if ($user_phid) {
+      $map = $type->newValueForUsers($key, array($this));
+      if (array_key_exists($user_phid, $map)) {
+        $usable_value = $map[$user_phid];
+        $raw_value = $type->getValueForStorage($usable_value);
+
+        $this->rawCacheData[$key] = $raw_value;
+        PhabricatorUserCache::writeCache(
+          $type,
+          $key,
+          $user_phid,
+          $raw_value);
+      }
+    }
+
+    $this->usableCacheData[$key] = $usable_value;
+
+    return $usable_value;
+  }
+
+
+  /**
+   * @task cache
+   */
+  public function clearCacheData($key) {
+    unset($this->rawCacheData[$key]);
+    unset($this->usableCacheData[$key]);
+    return $this;
   }
 
 }

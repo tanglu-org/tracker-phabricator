@@ -18,21 +18,22 @@ final class PhabricatorDateTimeSettingsPanel extends PhabricatorSettingsPanel {
     $user = $request->getUser();
     $username = $user->getUsername();
 
+    $pref_timezone = PhabricatorTimezoneSetting::SETTINGKEY;
     $pref_time = PhabricatorUserPreferences::PREFERENCE_TIME_FORMAT;
     $pref_date = PhabricatorUserPreferences::PREFERENCE_DATE_FORMAT;
     $pref_week_start = PhabricatorUserPreferences::PREFERENCE_WEEK_START_DAY;
+    $pref_ignore = PhabricatorUserPreferences::PREFERENCE_IGNORE_OFFSET;
     $preferences = $user->loadPreferences();
 
     $errors = array();
     if ($request->isFormPost()) {
       $new_timezone = $request->getStr('timezone');
-      if (in_array($new_timezone, DateTimeZone::listIdentifiers(), true)) {
-        $user->setTimezoneIdentifier($new_timezone);
-      } else {
+      if (!in_array($new_timezone, DateTimeZone::listIdentifiers(), true)) {
         $errors[] = pht('The selected timezone is not a valid timezone.');
       }
 
       $preferences
+        ->setPreference($pref_timezone, $new_timezone)
         ->setPreference(
           $pref_time,
           $request->getStr($pref_time))
@@ -41,11 +42,12 @@ final class PhabricatorDateTimeSettingsPanel extends PhabricatorSettingsPanel {
           $request->getStr($pref_date))
         ->setPreference(
           $pref_week_start,
-          $request->getStr($pref_week_start));
+          $request->getStr($pref_week_start))
+        ->setPreference($pref_ignore, null);
 
       if (!$errors) {
         $preferences->save();
-        $user->save();
+
         return id(new AphrontRedirectResponse())
           ->setURI($this->getPanelURI('?saved=true'));
       }

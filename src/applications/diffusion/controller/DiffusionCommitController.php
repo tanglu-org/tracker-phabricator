@@ -57,14 +57,13 @@ final class DiffusionCommitController extends DiffusionController {
             'Failed to load the commit because the commit has not been '.
             'parsed yet.'));
 
-      return $this->buildApplicationPage(
-        array(
-          $crumbs,
-          $error,
-        ),
-        array(
-          'title' => pht('Commit Still Parsing'),
-        ));
+      $title = pht('Commit Still Parsing');
+
+      return $this->newPage()
+        ->setTitle($title)
+        ->setCrumbs($crumbs)
+        ->appendChild($error);
+
     }
 
     $audit_requests = $commit->getAudits();
@@ -326,14 +325,15 @@ final class DiffusionCommitController extends DiffusionController {
 
     $add_comment = $this->renderAddCommentPanel($commit, $audit_requests);
 
-    $prefs = $viewer->loadPreferences();
-    $pref_filetree = PhabricatorUserPreferences::PREFERENCE_DIFF_FILETREE;
+    $filetree_on = $viewer->compareUserSetting(
+      PhabricatorShowFiletreeSetting::SETTINGKEY,
+      PhabricatorShowFiletreeSetting::VALUE_ENABLE_FILETREE);
+
     $pref_collapse = PhabricatorUserPreferences::PREFERENCE_NAV_COLLAPSED;
-    $show_filetree = $prefs->getPreference($pref_filetree);
-    $collapsed = $prefs->getPreference($pref_collapse);
+    $collapsed = $viewer->getUserSetting($pref_collapse);
 
     $nav = null;
-    if ($show_changesets && $show_filetree) {
+    if ($show_changesets && $filetree_on) {
       $nav = id(new DifferentialChangesetFileTreeSideNavBuilder())
         ->setTitle($commit->getDisplayName())
         ->setBaseURI(new PhutilURI($commit->getURI()))
@@ -356,8 +356,8 @@ final class DiffusionCommitController extends DiffusionController {
         $change_list,
         $add_comment,
       ))
-      ->addPropertySection(pht('DESCRIPTION'), $detail_list)
-      ->addPropertySection(pht('DETAILS'), $details)
+      ->addPropertySection(pht('Description'), $detail_list)
+      ->addPropertySection(pht('Details'), $details)
       ->setCurtain($curtain);
 
     $page = $this->newPage()
@@ -456,7 +456,12 @@ final class DiffusionCommitController extends DiffusionController {
     if ($audit_requests) {
       $user_requests = array();
       $other_requests = array();
+
       foreach ($audit_requests as $audit_request) {
+        if (!$audit_request->isInteresting()) {
+          continue;
+        }
+
         if ($audit_request->isUser()) {
           $user_requests[] = $audit_request;
         } else {
@@ -472,7 +477,7 @@ final class DiffusionCommitController extends DiffusionController {
 
       if ($other_requests) {
         $view->addProperty(
-          pht('Project/Package Auditors'),
+          pht('Group Auditors'),
           $this->renderAuditStatusView($other_requests));
       }
     }
